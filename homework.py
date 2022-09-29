@@ -33,7 +33,7 @@ logger.addHandler(StreamHandler(stream=sys.stdout))
 
 
 def send_message(bot, message):
-    """Отправка статуса домашки и логов в мой чат"""
+    """Отправка статуса домашки и логов в мой чат."""
     try:
         bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
@@ -44,7 +44,7 @@ def send_message(bot, message):
 
 
 def get_api_answer(current_timestamp):
-    """Направляет запрос сервису Домашек"""
+    """Направляет запрос сервису Домашек."""
     timestamp = current_timestamp
     params = {'from_date': timestamp}
     if requests.get(ENDPOINT,
@@ -69,8 +69,9 @@ def get_api_answer(current_timestamp):
             send_message(bot, message)
     return response
 
+
 def check_response(response):
-    """Проверка ответа от сервиса Домашек"""
+    """Проверка ответа от сервиса Домашек."""
     if isinstance(response["homeworks"], list) and response["current_date"]:
         return response["homeworks"]
     else:
@@ -81,7 +82,7 @@ def check_response(response):
 
 
 def parse_status(homework):
-    """Получение статуса конкретной домашки"""
+    """Получение статуса конкретной домашки."""
     homework_name = homework["homework_name"]
     homework_status = homework["status"]
     if homework_status not in HOMEWORK_STATUSES:
@@ -100,7 +101,7 @@ def parse_status(homework):
 
 
 def check_tokens():
-    """Проверка наличия переменных окружения"""
+    """Проверка наличия переменных окружения."""
     return (bool(PRACTICUM_TOKEN)
             and bool(TELEGRAM_TOKEN)
             and bool(TELEGRAM_CHAT_ID))
@@ -117,7 +118,7 @@ def main():
                 message = parse_status(check_response(response)[0])
                 send_message(bot, message)
             else:
-                logging.debug(f'Новых статусов домашек нет!')
+                logging.debug('Новых статусов домашек нет!')
             current_timestamp = int(response["current_date"])
             time.sleep(RETRY_TIME)
         except Exception as error:
@@ -126,8 +127,8 @@ def main():
             time.sleep(RETRY_TIME)
         else:
             return logger.critical(
-                f'Отсутствует обязательная переменная окружения. '
-                f'Программа принудительно остановлена.')
+                'Отсутствует обязательная переменная окружения. '
+                'Программа принудительно остановлена.')
 
 
 if __name__ == '__main__':
