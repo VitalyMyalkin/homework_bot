@@ -73,7 +73,7 @@ def check_response(response):
             if response['current_date']:
                 return response['homeworks']
             raise KeyError('Oтсутствие ожидаемых ключей '
-                               'в ответе от сервиса Домашек (нет даты)')
+                           'в ответе от сервиса Домашек (нет даты)')
         raise TypeError('Домашки представлены не в словаре')
     except TypeError('Ответ от сервиса домашек не словарь'):
         raise
@@ -90,12 +90,12 @@ def parse_status(homework):
             homework_status = homework['status']
             if homework_status not in HOMEWORK_STATUSES:
                 raise KeyError('Недокументированный '
-                                  'статус домашней работы')
+                               'статус домашней работы')
             verdict = HOMEWORK_STATUSES[homework_status]
             return (f'Изменился статус проверки работы '
                     f'"{homework_name}". {verdict}')
         raise KeyError('Oтсутствие ожидаемых ключей '
-                    'в домашке (нет статуса или названия работы)')
+                       'в домашке (нет статуса или названия работы)')
     raise TypeError('Домашка не словарь')
 
 
