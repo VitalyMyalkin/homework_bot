@@ -10,8 +10,6 @@ import telegram
 from dotenv import load_dotenv
 from requests import HTTPError
 
-from exceptions import StatusError
-
 load_dotenv()
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
@@ -62,9 +60,9 @@ def get_api_answer(current_timestamp):
                                 params=params
                                 )
         if response.status_code != HTTPStatus.OK:
-            raise HTTPError
+            raise HTTPError('Cервис Домашек недоступен!')
         return response.json()
-    except requests.ConnectionError:
+    except requests.ConnectionError('Cбои при запросе к сервису Домашек!'):
         raise
 
 
@@ -74,35 +72,31 @@ def check_response(response):
         if isinstance(response['homeworks'], list):
             if response['current_date']:
                 return response['homeworks']
-            else:
-                raise KeyError
-        else:
-            raise TypeError
-    # На случай, если response не словарь
-    except TypeError:
+            raise KeyError('Oтсутствие ожидаемых ключей '
+                               'в ответе от сервиса Домашек (нет даты)')
+        raise TypeError('Домашки представлены не в словаре')
+    except TypeError('Ответ от сервиса домашек не словарь'):
         raise
-    # На случай, если в response нет нужного ключа
-    except KeyError:
+    except KeyError('Oтсутствие ожидаемых ключей '
+                    'в ответе от сервиса Домашек (нет домашек)'):
         raise
 
 
 def parse_status(homework):
     """Получение статуса конкретной домашки."""
-    try:
-        homework_name = homework['homework_name']
-        homework_status = homework['status']
-        if homework_status not in HOMEWORK_STATUSES:
-            raise StatusError
-        verdict = HOMEWORK_STATUSES[homework_status]
-        return (
-                f'Изменился статус проверки работы '
-                f'"{homework_name}". {verdict}')
-    # На случай, если homework не словарь
-    except TypeError:
-        raise
-    # На случай, если в homework нет нужного ключа
-    except KeyError:
-        raise
+    if isinstance(homework, dict):
+        if homework['homework_name'] and homework['status']:
+            homework_name = homework['homework_name']
+            homework_status = homework['status']
+            if homework_status not in HOMEWORK_STATUSES:
+                raise KeyError('Недокументированный '
+                                  'статус домашней работы')
+            verdict = HOMEWORK_STATUSES[homework_status]
+            return (f'Изменился статус проверки работы '
+                    f'"{homework_name}". {verdict}')
+        raise KeyError('Oтсутствие ожидаемых ключей '
+                    'в домашке (нет статуса или названия работы)')
+    raise TypeError('Домашка не словарь')
 
 
 def check_tokens():
@@ -136,16 +130,8 @@ def main():
             current_timestamp = int(response['current_date'])
         except telegram.error.TelegramError:
             logger.error('Бот не смог отправить сообщение!')
-        except HTTPError:
-            message = str(logger.error('Cервис Домашек недоступен!'))
-        except ConnectionError:
-            message = str(logger.error('Cбои при запросе к сервису Домашек!'))
-        except TypeError or KeyError:
-            message = str(logger.error('Oтсутствие ожидаемых ключей '
-                                       'в ответе от сервиса Домашек'))
-        except StatusError:
-            message = str(logger.error('Недокументированный '
-                                       'статус домашней работы'))
+        except Exception as error:
+            message = str(logger.error(f'{error}'))
         finally:
             if LAST_MESSAGE != message:
                 send_message(bot, message)
