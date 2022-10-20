@@ -1,13 +1,16 @@
-import requests
 import os
 import sys
-import time
-import telegram
 import logging
-
 from logging import StreamHandler
+from http import HTTPStatus
+
+import time
+import requests
+import telegram
 from dotenv import load_dotenv
-from requests.exceptions import HTTPError
+from requests import HTTPError
+
+from exceptions import StatusError
 
 load_dotenv()
 
@@ -24,6 +27,10 @@ HOMEWORK_STATUSES = {
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
+
+message = ''
+LAST_MESSAGE = ''
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s'
@@ -39,65 +46,63 @@ def send_message(bot, message):
             chat_id=TELEGRAM_CHAT_ID,
             text=message)
         logger.info(f'Сообщение {message} отправлено!')
-    except Exception:
-        logger.exception(f'Бот не смог отправить сообщение {message}')
+        global LAST_MESSAGE
+        LAST_MESSAGE = message
+    except telegram.error.TelegramError:
+        raise
 
 
 def get_api_answer(current_timestamp):
     """Направляет запрос сервису Домашек."""
     timestamp = current_timestamp
     params = {'from_date': timestamp}
-    if requests.get(ENDPOINT,
-                    headers=HEADERS,
-                    params=params
-                    ).status_code != 200:
-        message = str(logger.error('Cервис Домашек недоступен'))
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        send_message(bot, message)
-        raise HTTPError('Cервис Домашек недоступен')
-    else:
-        try:
-            response = requests.get(ENDPOINT,
-                                    headers=HEADERS,
-                                    params=params
-                                    ).json()
-        except Exception:
-            message = str(logger.exception('Cбои при запросе к '
-                                           'сервису Домашек'))
-            response = {}
-            bot = telegram.Bot(token=TELEGRAM_TOKEN)
-            send_message(bot, message)
-    return response
+    try:
+        response = requests.get(ENDPOINT,
+                                headers=HEADERS,
+                                params=params
+                                )
+        if response.status_code != HTTPStatus.OK:
+            raise HTTPError
+        return response.json()
+    except requests.ConnectionError:
+        raise
 
 
 def check_response(response):
     """Проверка ответа от сервиса Домашек."""
-    if isinstance(response["homeworks"], list) and response["current_date"]:
-        return response["homeworks"]
-    else:
-        message = str(logger.error('Отсутствие ожидаемых '
-                                   'ключей в ответе сервиса'))
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        send_message(bot, message)
+    try:
+        if isinstance(response['homeworks'], list):
+            if response['current_date']:
+                return response['homeworks']
+            else:
+                raise KeyError
+        else:
+            raise TypeError
+    # На случай, если response не словарь
+    except TypeError:
+        raise
+    # На случай, если в response нет нужного ключа
+    except KeyError:
+        raise
 
 
 def parse_status(homework):
     """Получение статуса конкретной домашки."""
-    homework_name = homework["homework_name"]
-    homework_status = homework["status"]
-    if homework_status not in HOMEWORK_STATUSES:
-        message = str(logger.error(
-            f'Недокументированный статус '
-            f'домашней работы {homework_name}'
-            f': {homework_status}'))
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        send_message(bot, message)
-        raise ValueError('Cервис Домашек недоступен')
-    else:
+    try:
+        homework_name = homework['homework_name']
+        homework_status = homework['status']
+        if homework_status not in HOMEWORK_STATUSES:
+            raise StatusError
         verdict = HOMEWORK_STATUSES[homework_status]
         return (
-            f'Изменился статус проверки работы '
-            f'"{homework_name}". {verdict}')
+                f'Изменился статус проверки работы '
+                f'"{homework_name}". {verdict}')
+    # На случай, если homework не словарь
+    except TypeError:
+        raise
+    # На случай, если в homework нет нужного ключа
+    except KeyError:
+        raise
 
 
 def check_tokens():
@@ -105,30 +110,46 @@ def check_tokens():
     return (bool(PRACTICUM_TOKEN)
             and bool(TELEGRAM_TOKEN)
             and bool(TELEGRAM_CHAT_ID))
+    # Оставил предыдущее решение: для all() нужны итерируемые объекты,
+    # поэтому bool() проходит тесты, а all() - нет. Либо я неверно
+    # понимаю синтаксис all()
 
 
 def main():
     """Основная логика работы бота."""
+    if not check_tokens():
+        logger.critical(
+            'Отсутствует обязательная переменная окружения. '
+            'Программа принудительно остановлена.')
+        raise EnvironmentError(
+            'Отсутствует обязательная переменная окружения. '
+            'Программа принудительно остановлена.')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = 0
-    while check_tokens():
+    while True:
         try:
             response = get_api_answer(current_timestamp)
-            if len(check_response(response)) > 0:
+            try:
                 message = parse_status(check_response(response)[0])
-                send_message(bot, message)
-            else:
+            except IndexError:
                 logging.debug('Новых статусов домашек нет!')
-            current_timestamp = int(response["current_date"])
+            current_timestamp = int(response['current_date'])
+        except telegram.error.TelegramError:
+            logger.error('Бот не смог отправить сообщение!')
+        except HTTPError:
+            message = str(logger.error('Cервис Домашек недоступен!'))
+        except ConnectionError:
+            message = str(logger.error('Cбои при запросе к сервису Домашек!'))
+        except TypeError or KeyError:
+            message = str(logger.error('Oтсутствие ожидаемых ключей '
+                                       'в ответе от сервиса Домашек'))
+        except StatusError:
+            message = str(logger.error('Недокументированный '
+                                       'статус домашней работы'))
+        finally:
+            if LAST_MESSAGE != message:
+                send_message(bot, message)
             time.sleep(RETRY_TIME)
-        except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            send_message(bot, message)
-            time.sleep(RETRY_TIME)
-        else:
-            return logger.critical(
-                'Отсутствует обязательная переменная окружения. '
-                'Программа принудительно остановлена.')
 
 
 if __name__ == '__main__':
