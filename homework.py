@@ -3,12 +3,11 @@ import sys
 import logging
 from logging import StreamHandler
 from http import HTTPStatus
-
 import time
+
 import requests
 import telegram
 from dotenv import load_dotenv
-from requests import HTTPError
 
 load_dotenv()
 
@@ -26,15 +25,14 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-message = ''
-LAST_MESSAGE = ''
-
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s'
 )
 logger = logging.getLogger(__name__)
 logger.addHandler(StreamHandler(stream=sys.stdout))
+
+last_message = ''
 
 
 def send_message(bot, message):
@@ -44,10 +42,8 @@ def send_message(bot, message):
             chat_id=TELEGRAM_CHAT_ID,
             text=message)
         logger.info(f'Сообщение {message} отправлено!')
-        global LAST_MESSAGE
-        LAST_MESSAGE = message
     except telegram.error.TelegramError:
-        raise
+        raise telegram.error.TelegramError('Бот не смог отправить сообщение!')
 
 
 def get_api_answer(current_timestamp):
@@ -60,43 +56,46 @@ def get_api_answer(current_timestamp):
                                 params=params
                                 )
         if response.status_code != HTTPStatus.OK:
-            raise HTTPError('Cервис Домашек недоступен!')
+            raise requests.HTTPError(f'Неудачный запрос! Код ответа сервиса'
+                                     f' Домашек: {response.status_code}')
         return response.json()
-    except requests.ConnectionError('Cбои при запросе к сервису Домашек!'):
-        raise
+    except requests.ConnectionError:
+        raise requests.ConnectionError('Cбои при запросе к сервису Домашек!')
 
 
 def check_response(response):
     """Проверка ответа от сервиса Домашек."""
-    try:
-        if isinstance(response['homeworks'], list):
-            if response['current_date']:
-                return response['homeworks']
-            raise KeyError('Oтсутствие ожидаемых ключей '
-                           'в ответе от сервиса Домашек (нет даты)')
-        raise TypeError('Домашки представлены не в словаре')
-    except TypeError('Ответ от сервиса домашек не словарь'):
-        raise
-    except KeyError('Oтсутствие ожидаемых ключей '
-                    'в ответе от сервиса Домашек (нет домашек)'):
-        raise
+    if not isinstance(response, dict):
+        raise TypeError('Ответ от сервиса домашек не словарь')
+    if not response['current_date']:
+        raise KeyError('Oтсутствие ожидаемых ключей '
+                       'в ответе от сервиса Домашек: нет даты')
+    if not response['homeworks']:
+        raise KeyError('Oтсутствие ожидаемых ключей '
+                       'в ответе от сервиса Домашек: нет домашек')
+    if isinstance(response['homeworks'], list):
+        return response['homeworks']
+    raise TypeError('Домашки получены, но не списком')
 
 
 def parse_status(homework):
     """Получение статуса конкретной домашки."""
-    if isinstance(homework, dict):
-        if homework['homework_name'] and homework['status']:
-            homework_name = homework['homework_name']
-            homework_status = homework['status']
-            if homework_status not in HOMEWORK_STATUSES:
-                raise KeyError('Недокументированный '
-                               'статус домашней работы')
-            verdict = HOMEWORK_STATUSES[homework_status]
-            return (f'Изменился статус проверки работы '
-                    f'"{homework_name}". {verdict}')
+    if not isinstance(homework, dict):
+        raise TypeError('Домашка не словарь')
+    if not homework['homework_name']:
         raise KeyError('Oтсутствие ожидаемых ключей '
-                       'в домашке (нет статуса или названия работы)')
-    raise TypeError('Домашка не словарь')
+                       'в домашке: нет названия работы')
+    if not homework['status']:
+        raise KeyError('Oтсутствие ожидаемых ключей '
+                       'в домашке: нет статуса работы')
+    homework_name = homework['homework_name']
+    homework_status = homework['status']
+    if homework_status not in HOMEWORK_STATUSES:
+        raise KeyError(f'Недокументированный '
+                       f'статус домашней работы: {homework_status}')
+    verdict = HOMEWORK_STATUSES[homework_status]
+    return (f'Изменился статус проверки работы '
+            f'"{homework_name}". {verdict}')
 
 
 def check_tokens():
@@ -105,8 +104,7 @@ def check_tokens():
             and bool(TELEGRAM_TOKEN)
             and bool(TELEGRAM_CHAT_ID))
     # Оставил предыдущее решение: для all() нужны итерируемые объекты,
-    # поэтому bool() проходит тесты, а all() - нет. Либо я неверно
-    # понимаю синтаксис all()
+    # поэтому bool() проходит тесты, а all() - нет.
 
 
 def main():
@@ -133,8 +131,13 @@ def main():
         except Exception as error:
             message = str(logger.error(f'{error}'))
         finally:
-            if LAST_MESSAGE != message:
+            if last_message != message:
                 send_message(bot, message)
+                last_message = message
+                # решение не кажется удачным: перезаписывать last_message
+                # лучше тогда, когда у нас получилось отправить сообщение.
+                # Поэтому раньше мы ее перезаписывали в функции, отправляющей
+                # сообщения. Глобальные переменные плохо влияют на память?
             time.sleep(RETRY_TIME)
 
 
