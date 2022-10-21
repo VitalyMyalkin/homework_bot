@@ -65,10 +65,10 @@ def check_response(response):
     """Проверка ответа от сервиса Домашек."""
     if not isinstance(response, dict):
         raise TypeError('Ответ от сервиса домашек не словарь')
-    if not response['current_date']:
+    if 'current_date' not in response:
         raise KeyError('Oтсутствие ожидаемых ключей '
                        'в ответе от сервиса Домашек: нет даты')
-    if not response['homeworks']:
+    if 'homeworks' not in response:
         raise KeyError('Oтсутствие ожидаемых ключей '
                        'в ответе от сервиса Домашек: нет домашек')
     if isinstance(response['homeworks'], list):
@@ -80,10 +80,10 @@ def parse_status(homework):
     """Получение статуса конкретной домашки."""
     if not isinstance(homework, dict):
         raise TypeError('Домашка не словарь')
-    if not homework['homework_name']:
+    if 'homework_name' not in homework:
         raise KeyError('Oтсутствие ожидаемых ключей '
                        'в домашке: нет названия работы')
-    if not homework['status']:
+    if 'status' not in homework:
         raise KeyError('Oтсутствие ожидаемых ключей '
                        'в домашке: нет статуса работы')
     homework_name = homework['homework_name']
@@ -121,9 +121,9 @@ def main():
     while True:
         try:
             response = get_api_answer(current_timestamp)
-            try:
+            if len(check_response(response)) > 0:
                 message = parse_status(check_response(response)[0])
-            except IndexError:
+            else:
                 logging.debug('Новых статусов домашек нет!')
             current_timestamp = int(response['current_date'])
         except telegram.error.TelegramError:
