@@ -32,8 +32,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.addHandler(StreamHandler(stream=sys.stdout))
 
-last_message = ''
-
 
 def send_message(bot, message):
     """Отправка статуса домашки и логов в мой чат."""
@@ -117,6 +115,8 @@ def main():
             'Отсутствует обязательная переменная окружения. '
             'Программа принудительно остановлена.')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    last_message = ''
+    message = ''
     current_timestamp = 0
     while True:
         try:
